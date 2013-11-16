@@ -51,9 +51,9 @@ def update_simulation(sim):
 					rate_counter += 1
 
 			if sim.state != "Active":
-				if len(rate_lines) - 1 < sim.project.production_protocol.n_blocks:
+				if len(rate_lines) < sim.project.production_protocol.n_blocks:
 					sim.state = "Fail"
-					sim.notes = "Error: Failed at %d" % (rate_counter+1)
+					sim.notes = "Error: Failed at %d" % (rate_counter)
 				else:
 					sim.state = "Complete"
 
@@ -86,5 +86,94 @@ def update_simulation(sim):
 def request_trajectory(sim):
 	print "Requesting namd trajectory."
 
+	sim_name = "%s_%s" % (sim.project.name, sim.name)
 
+	concat_stripped_file = "%s_cat_stripped.dcd" % sim_name
+	rmsd_file = "%s_rmsd.dat" % sim_name
+	config = sim.project.simulation_package
+
+	start_psf = "EQ/ionized.psf"
+	start_pdb = "EQ/ionized.pdb"
+
+
+	strip_waters_tcl_template = '''
+set sel [atomselect top "all not water and not hydrogen"]
+set outfile [open %s_stripped.ind w]
+puts $outfile [$sel get index]
+$sel writepdb %s_stripped.pdb
+$sel writepsf %s_stripped.psf
+close $outfile
+''' % (sim_name, sim_name, sim_name)
+
+	create_rmsd_tcl_template = '''
+set outfile [open %s w]
+set nf [molinfo top get numframes]
+set frame0 [atomselect top "protein and backbone and noh" frame 0]
+set sel [atomselect top "protein and backbone and noh"]
+set all [atomselect top all]
+# rmsd calculation loop
+for { set i 1 } { $i <= $nf } { incr i } {
+$sel frame $i
+$all frame $i
+$all move [measure fit $sel $frame0]
+puts $outfile "[expr $i *250 * 2] [expr [measure rmsd $sel $frame0] / 10]"
+}
+close $outfile
+''' % rmsd_file
+
+	## Create the tcl scripts	
+	create_tcl_scripts_cmd = "cd %s; echo -e '%s' > strip_waters.tcl; echo -e '%s' > create_rmsd.tcl" % (sim.work_dir, strip_waters_tcl_template, create_rmsd_tcl_template)
+	create_scripts, err = sim.assigned_cluster.exec_cmd(create_tcl_scripts_cmd)
+
+	## Job submission command
+	vmd_concatenate_rmsd_cmd = '''
+cd %s
+vmd -dispdev none EQ/ionized.psf EQ/ionized.pdb < %s
+%s -stride 10 -o %s -i %s_stripped.ind *prod*.dcd
+vmd -dispdev none %s_stripped.psf %s < %s
+''' % ( sim.work_dir,
+	"strip_waters.tcl",
+	config.namd_catdcd_path, concat_stripped_file, sim_name,
+	sim_name, concat_stripped_file, "create_rmsd.tcl")
+
+	## Write the job submission script
+	jobname = sim_name + "_traj_analysis"
+	script = sim.assigned_cluster.write_script(1, 1, "10:0:0", jobname, vmd_concatenate_rmsd_cmd, config.module)
+
+	# print script
+
+	submission = sim.assigned_cluster.submit_job(script, sim.work_dir)
+
+	print submission
+
+	sim.trajectory_state = "Requested"
+	sim.trajectory_path = sim.work_dir + "/" + concat_stripped_file
+	sim.trajectory_job_id = submission.split(".")[0]
+	sim.rmsd_path = sim.work_dir + "/" + rmsd_file
+
+	sim.save()
+
+
+
+
+def delete_trajectory(sim):
+	print "Deleting namd trajectory"
+
+	sim_name = "%s_%s" % (sim.project.name, sim.name)
+
+	concat_file = "%s/%s_cat_stripped.dcd" % (sim.work_dir, sim_name)
+	rmsd_file = "%s/%s_rmsd.dat" % (sim.work_dir, sim_name)
+
+	## Delete files
+	rm_cmd = "rm  %s %s" % (concat_file, rmsd_file)
+	rm, err = sim.assigned_cluster.exec_cmd(rm_cmd)
+
+	## Update db
+	sim.trajectory_state = ""
+	sim.trajectory_path = ""
+	sim.trajectory_job_id = ""
+	sim.rmsd_path = ""
+	sim.rmsd_data = ""
+
+	sim.save()
 

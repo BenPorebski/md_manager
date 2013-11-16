@@ -28,8 +28,10 @@
           </thead>
           <tbody>
         	{% for job in clusterjobs %}
+          {% if job.job_host == host %}
         		{% if job.state == 'Active' %}<tr class="success">{% else %}<tr class="warning">{% endif %}
 				<td>{{job.job_id}}</td><td>{{job.job_name}}</td><td>{{job.job_owner}}</td><td>{{job.state}}</td><td>{{job.n_cores}}</td></tr>
+          {% endif %}
         	{% endfor %}
           </tbody>
       	</table>

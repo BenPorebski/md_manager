@@ -61,7 +61,7 @@
       <button class="btn btn-mini btn-warning disabled" type="button">Trajectory requested</button>
       <a href="{% url 'manager:update_analysis' project.id simulation.id %}" class="btn btn-mini" type="button">Update status</a>
       {% elif simulation.trajectory_state == 'Ready' %}
-      <button class="btn btn-mini btn-danger" type="button">Delete trajectory</button>
+      <a href="{% url 'manager:delete_trajectory' simulation.id %}" class="btn btn-mini btn-danger" onclick="return confirm('Are you REALLY sure you want to delete {{simulation.name}}?');" type="button">Delete trajectory</a>
       <button class="btn btn-mini btn-success" type="button">Download trajectory</button>
       {% endif %}
 

@@ -26,7 +26,8 @@ def update_simulation(sim):
 			sim.n_cores = job.n_cores
 
 			try:
-				progression = (int(job.job_name.split("MD")[1]) - 1) * int(sim.project.production_protocol.ns_per_block)
+				tmp_jobname = job.job_name.upper()
+				progression = (int(tmp_jobname.split("MD")[1]) - 1) * int(sim.project.production_protocol.ns_per_block)
 				sim.progression = str(progression)
 			except:
 				sim.progression = None
@@ -40,7 +41,7 @@ def update_simulation(sim):
 
 		if err:
 			#Error, directory doesn't exist.
-			simulation.notes = "Error: Cannot locate simulation working directory!"
+			sim.notes = "Error: Cannot locate simulation working directory!"
 		else:
 			rate_lines = performance.split('\n')
 			rate_counter = 0
@@ -53,7 +54,7 @@ def update_simulation(sim):
 			if sim.state != "Active":
 				if rate_counter < sim.project.production_protocol.n_blocks:
 					sim.state = "Fail"
-					sim.notes = "Error: Failed at %d" % rate_counter
+					sim.notes = "Error: Failed at MD %d" % (rate_counter + 1)
 				else:
 					sim.state = "Complete"
 					sim.progression = sim.project.production_protocol.total_ns
@@ -97,22 +98,29 @@ def request_trajectory(sim):
 		cont += 'c\n'
 	cont += 'c'
 
+## Concatenate trajectory
+## Convert trajectory to only include protein -- Will need to change this to exclude only water...
+## Create start.gro
+## Generate RMSD
+## Generate RMSF - To implement.
 	request_cmd = """
-%s -f *MD{001..003}.xtc -o %s -settime << EOF
+%s -f *MD*.xtc -o %s -dt 10 -settime << EOF
 %s
 EOF
 echo 1 1|%s -f %s -o %s -s *for_MD001.tpr -pbc nojump -center
+echo 1 1|%s -f %s/EQ/*10.gro -o %s_start.gro -s %s/EQ/*10.tpr -pbc nojump -center
 echo 1 3|%s -s *for_MD001.tpr -f %s -o %s
 rm %s
 """ % (config.gromacs_trjcat_path, concat_file,
 	cont,
 	config.gromacs_trjconv_path, concat_file, concat_noh_file,
+	config.gromacs_trjconv_path, sim.work_dir, sim_name, sim.work_dir,
 	config.gromacs_g_rms_path, concat_noh_file, rmsd_file,
 	concat_file)
 	
 	## Write the job submission script
 	jobname = sim_name + "_traj_analysis"
-	script = sim.assigned_cluster.write_script(1, 1, "10:0:0", jobname, request_cmd, "gromacs-intel/4.0.7")
+	script = sim.assigned_cluster.write_script(1, 4, "10:0:0", jobname, request_cmd, config.module)
 
 	submission = sim.assigned_cluster.submit_job(script, sim.work_dir)
 
@@ -122,6 +130,32 @@ rm %s
 	sim.rmsd_path = sim.work_dir + "/" + rmsd_file
 
 	sim.save()
+
+
+def delete_trajectory(sim):
+	print "Deleting gromacs trajectory"
+
+	sim_name = "%s_%s" % (sim.project.name, sim.name)
+
+	concat_file = "%s/%s_cat.xtc" % (sim.work_dir, sim_name)
+	concat_noh_file = "%s/%s_cat_noh.xtc" % (sim.work_dir, sim_name)
+	rmsd_file = "%s/%s_rmsd.xvg" % (sim.work_dir, sim_name)
+
+	## Delete files
+	rm_cmd = "rm  %s %s %s" % (concat_file, concat_noh_file, rmsd_file)
+	rm, err = sim.assigned_cluster.exec_cmd(rm_cmd)
+
+	## Update db
+	sim.trajectory_state = ""
+	sim.trajectory_path = ""
+	sim.trajectory_job_id = ""
+	sim.rmsd_path = ""
+	sim.rmsd_data = ""
+
+	sim.save()
+
+
+
 
 
 

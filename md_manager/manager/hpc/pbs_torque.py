@@ -130,22 +130,22 @@ def update_queue(host):
 
 
 def write_script(host, nodes, ppn, walltime, job_name, cmd, modules):
+	module_line = ''
+	if modules != "":
+		module_line = "module load %s" % modules
+
 	template = '''
 #PBS -l nodes=%s:ppn=%s
 #PBS -l walltime=%s
 #PBS -N %s
 #PBS -S /bin/bash
 
-#==============================================================
-#                Script  for  %s
-#==============================================================
-
-module load %s
+%s
 
 cd $PBS_O_WORKDIR
 
 %s
-''' % (nodes, ppn, walltime, job_name, host.hostname, modules, cmd)
+''' % (nodes, ppn, walltime, job_name, module_line, cmd)
 
 	return template
 

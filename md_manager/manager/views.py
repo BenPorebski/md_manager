@@ -97,6 +97,14 @@ def request_trajectory(request, project_id, sim_id=None):
 
 	return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
 
+def delete_trajectory(request, sim_id):
+	from manager.models import Simulation
+
+	Simulation.objects.get(id=sim_id).delete_trajectory()
+
+	return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
+
+
 def request_rmsd(request, project_id, sim_id=None):
 	from manager.models import Project
 	from manager.models import Simulation
@@ -147,9 +155,10 @@ def render_rmsd(request, project_id):
 			ax.plot(x, y, label=sim.name)
 
 	ax.set_xlim(0.0, x_max)
+	# ax.set_ylim(0.0, 1.0)
 	ax.set_ylabel('RMSD (nm)')
 	ax.set_xlabel('Time (ns)')
-	ax.set_title('RMSD plot\nC-aplha after lsq fit to %s' % project.name)
+	ax.set_title('RMSD plot\nC-alpha after lsq fit to %s' % project.name)
 	ax.legend(loc='upper left', shadow=True)
 	ax.grid(True)
 
@@ -170,27 +179,46 @@ def update_analysis(request, project_id, sim_id=None):
 	from manager.models import Simulation
 	from manager.models import ClusterJob
 
+	project = Project.objects.get(id=project_id)
+
 	if sim_id == None:
 		## Update all simulation host queues
 		host_lst = []
-		for sim in Project.objects.get(id=project_id).simulation_set.all():
+		for sim in project.simulation_set.all():
 			host_lst.append(sim.assigned_cluster)
 		uhost_lst = list(set(host_lst))
 		for host in uhost_lst:
 			host.update_queue()
+
+		## Update all simulations in project
+		for sim in project.simulation_set.all():
+			if sim.trajectory_state == "Requested":
+				tmp_state = ''
+				for job in ClusterJob.objects.all():
+					if sim.trajectory_job_id == str(job.job_id) and job.state == "Active" or "Idle":
+						tmp_state = "Requested"
+						break
+					else:
+						tmp_state = "Ready"
+
+				sim.trajectory_state = tmp_state
+				sim.save()
+
 	else:
 		## Update specific queue
 		Simulation.objects.get(id=sim_id).assigned_cluster.update_queue()
-		
-	## Update trajectory states from the current stored clusterjobs
-	for sim in Project.objects.get(id=project_id).simulation_set.all():
+
+		## Update trajectory states from the current stored clusterjobs
+		sim = Simulation.objects.get(id=sim_id)
 		if sim.trajectory_state == "Requested":
 			tmp_state = ''
 			for job in ClusterJob.objects.all():
-				if sim.trajectory_job_id == str(job.job_id) and job.state == "Active" :
+				if sim.trajectory_job_id == str(job.job_id) and job.state == "Active":
 					tmp_state = "Requested"
+					break
 				else:
 					tmp_state = "Ready"
+
 			sim.trajectory_state = tmp_state
 			sim.save()
 

@@ -167,6 +167,11 @@ class Simulation(models.Model):
 		module = __import__(self.project.simulation_package.package)
 		return module.request_trajectory(self)
 
+	def delete_trajectory(self):
+		sys.path.append("manager/software/")
+		module = __import__(self.project.simulation_package.package)
+		return module.delete_trajectory(self)
+
 
 
 
